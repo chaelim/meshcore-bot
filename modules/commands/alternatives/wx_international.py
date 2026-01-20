@@ -19,7 +19,7 @@ class GlobalWxCommand(BaseCommand):
     
     # Plugin metadata
     name = "gwx"
-    keywords = ['gwx', 'globalweather', 'gwxa']
+    keywords = ['gwx', 'globalweather', 'gwxa', '날씨']
     description = "Get weather information for any global location (usage: gwx Tokyo)"
     category = "weather"
     cooldown_seconds = 5  # 5 second cooldown per user to prevent API abuse
