@@ -18,6 +18,7 @@ from .plugin_loader import PluginLoader
 from .commands.base_command import BaseCommand
 from .utils import check_internet_connectivity_async, format_keyword_response_with_placeholders
 
+MAX_MESSAGE_BYTES = 150
 
 @dataclass
 class InternetStatusCache:
@@ -176,7 +177,132 @@ class CommandManager:
         self.bot.rate_limiter.record_send()
         self.bot.bot_tx_rate_limiter.record_tx()
         return True
-    
+
+    def split_message(self, content: str, max_bytes: int = None) -> List[str]:
+        """Split a long message into multiple parts that fit within the byte size limit.
+
+        Attempts to split at logical points (newlines, sentences, words) to maintain
+        readability. Each part is prefixed with a part indicator (e.g., "[1/3] ").
+
+        Note: max_bytes is in bytes (UTF-8 encoded), not characters. This matters for
+        non-ASCII characters like Korean (3 bytes each) or emoji (4 bytes each).
+
+        Args:
+            content: The message content to split.
+            max_bytes: Maximum bytes per message (default: MAX_MESSAGE_BYTES).
+
+        Returns:
+            List[str]: List of message parts, each within max_bytes when UTF-8 encoded.
+        """
+        # Use default if not specified
+        if max_bytes is None:
+            max_bytes = MAX_MESSAGE_BYTES
+
+        # If content fits, return as-is
+        if len(content.encode('utf-8')) <= max_bytes:
+            return [content]
+
+        parts = []
+        remaining = content
+
+        # First pass: estimate number of parts needed (accounting for part prefix overhead)
+        # Part prefix like "[1/3] " takes 7 bytes (ASCII)
+        prefix_overhead = 7
+        effective_max = max_bytes - prefix_overhead
+        # Estimate based on byte length
+        estimated_parts = (len(content.encode('utf-8')) + effective_max - 1) // effective_max
+
+        part_num = 1
+        while remaining:
+            # Calculate prefix for this part
+            prefix = f"[{part_num}/{estimated_parts}] "
+            prefix_bytes = len(prefix.encode('utf-8'))
+            available_bytes = max_bytes - prefix_bytes
+
+            # Check if remaining content fits
+            if len(remaining.encode('utf-8')) <= available_bytes:
+                # Last part - fits completely
+                parts.append(f"{prefix}{remaining}")
+                break
+
+            # Find a good split point that fits within byte limit
+            # Start from an estimated character position and adjust
+            split_index = self._find_byte_safe_split(remaining, available_bytes)
+
+            # Try to split at logical points (in order of preference)
+            chunk = remaining[:split_index]
+
+            # 1. Newline
+            newline_pos = chunk.rfind('\n')
+            if newline_pos > len(chunk) // 2:
+                split_index = newline_pos + 1
+            else:
+                # 2. End of sentence (. ! ?)
+                for punct in ['. ', '! ', '? ']:
+                    punct_pos = chunk.rfind(punct)
+                    if punct_pos > len(chunk) // 2:
+                        split_index = punct_pos + len(punct)
+                        break
+                else:
+                    # 3. Comma or semicolon
+                    for punct in [', ', '; ']:
+                        punct_pos = chunk.rfind(punct)
+                        if punct_pos > len(chunk) // 2:
+                            split_index = punct_pos + len(punct)
+                            break
+                    else:
+                        # 4. Space (word boundary)
+                        space_pos = chunk.rfind(' ')
+                        if space_pos > len(chunk) // 2:
+                            split_index = space_pos + 1
+                        # else: use the byte-safe split point we already found
+
+            part_content = remaining[:split_index].rstrip()
+            parts.append(f"{prefix}{part_content}")
+            remaining = remaining[split_index:].lstrip()
+            part_num += 1
+
+        # Update part numbers if estimate was wrong
+        if len(parts) != estimated_parts:
+            updated_parts = []
+            total = len(parts)
+            for i, part in enumerate(parts, 1):
+                # Remove old prefix and add new one
+                old_prefix_end = part.find('] ') + 2
+                content_part = part[old_prefix_end:]
+                updated_parts.append(f"[{i}/{total}] {content_part}")
+            parts = updated_parts
+
+        return parts
+
+    def _find_byte_safe_split(self, text: str, max_bytes: int) -> int:
+        """Find a character index that results in at most max_bytes when UTF-8 encoded.
+
+        Ensures we don't split in the middle of a multi-byte character.
+
+        Args:
+            text: The text to find a split point in.
+            max_bytes: Maximum number of bytes allowed.
+
+        Returns:
+            int: Character index where the split should occur.
+        """
+        # If text fits, return full length
+        if len(text.encode('utf-8')) <= max_bytes:
+            return len(text)
+
+        # Binary search for the right character position
+        low, high = 0, len(text)
+
+        while low < high:
+            mid = (low + high + 1) // 2
+            if len(text[:mid].encode('utf-8')) <= max_bytes:
+                low = mid
+            else:
+                high = mid - 1
+
+        return low
+
     def load_keywords(self) -> Dict[str, str]:
         """Load keywords from config.
         
@@ -363,52 +489,84 @@ class CommandManager:
     
     async def send_dm(self, recipient_id: str, content: str) -> bool:
         """Send a direct message using meshcore-cli command.
-        
-        Handles contact lookup, rate limiting, and uses retry logic if available.
-        
+
+        Handles contact lookup, rate limiting, message splitting for long messages,
+        and uses retry logic if available.
+
         Args:
             recipient_id: The recipient's name or ID.
             content: The message content to send.
-            
+
         Returns:
-            bool: True if sent successfully, False otherwise.
+            bool: True if all parts sent successfully, False otherwise.
         """
         if not self.bot.connected or not self.bot.meshcore:
             return False
-        
+
+        # Split message if needed (DMs have full MAX_MESSAGE_BYTES available)
+        parts = self.split_message(content, MAX_MESSAGE_BYTES)
+
+        if len(parts) > 1:
+            self.logger.info(f"Splitting DM into {len(parts)} parts (content size: {len(content.encode('utf-8'))} bytes)")
+
+        # Send each part
+        all_success = True
+        for i, part in enumerate(parts):
+            success = await self._send_dm_single(recipient_id, part)
+            if not success:
+                all_success = False
+                self.logger.error(f"Failed to send DM part {i+1}/{len(parts)}")
+                break  # Stop sending remaining parts if one fails
+
+            # Add delay between multi-part messages to avoid overwhelming the recipient
+            if i < len(parts) - 1:
+                await asyncio.sleep(2.0)
+
+        return all_success
+
+    async def _send_dm_single(self, recipient_id: str, content: str) -> bool:
+        """Send a single direct message (internal helper).
+
+        Args:
+            recipient_id: The recipient's name or ID.
+            content: The message content to send (must be within size limit).
+
+        Returns:
+            bool: True if sent successfully, False otherwise.
+        """
         # Check all rate limits
         can_send, reason = await self._check_rate_limits()
         if not can_send:
             if reason:
                 self.logger.warning(reason)
             return False
-        
+
         try:
             # Find the contact by name (since recipient_id is the contact name)
             contact = self.bot.meshcore.get_contact_by_name(recipient_id)
             if not contact:
                 self.logger.error(f"Contact not found for name: {recipient_id}")
                 return False
-            
+
             # Use the contact name for logging
             contact_name = contact.get('name', contact.get('adv_name', recipient_id))
             self.logger.info(f"Sending DM to {contact_name}: {content}")
-            
+
             # Try to use send_msg_with_retry if available (meshcore-2.1.6+)
             try:
                 # Use the meshcore commands interface for send_msg_with_retry
                 if hasattr(self.bot.meshcore, 'commands') and hasattr(self.bot.meshcore.commands, 'send_msg_with_retry'):
                     self.logger.debug("Using send_msg_with_retry for improved reliability")
-                    
+
                     # Use send_msg_with_retry with configurable retry parameters
                     max_attempts = self.bot.config.getint('Bot', 'dm_max_retries', fallback=3)
                     max_flood_attempts = self.bot.config.getint('Bot', 'dm_max_flood_attempts', fallback=2)
                     flood_after = self.bot.config.getint('Bot', 'dm_flood_after', fallback=2)
                     timeout = 0  # Use suggested timeout from meshcore
-                    
+
                     self.logger.debug(f"Attempting DM send with {max_attempts} max attempts")
                     result = await self.bot.meshcore.commands.send_msg_with_retry(
-                        contact, 
+                        contact,
                         content,
                         max_attempts=max_attempts,
                         max_flood_attempts=max_flood_attempts,
@@ -419,16 +577,16 @@ class CommandManager:
                     # Fallback to regular send_msg for older meshcore versions
                     self.logger.debug("send_msg_with_retry not available, using send_msg")
                     result = await self.bot.meshcore.commands.send_msg(contact, content)
-                    
+
             except AttributeError:
                 # Fallback to regular send_msg for older meshcore versions
                 self.logger.debug("send_msg_with_retry not available, using send_msg")
                 result = await self.bot.meshcore.commands.send_msg(contact, content)
-            
+
             # Check if send_msg_with_retry was used
-            used_retry_method = (hasattr(self.bot.meshcore, 'commands') and 
+            used_retry_method = (hasattr(self.bot.meshcore, 'commands') and
                                hasattr(self.bot.meshcore.commands, 'send_msg_with_retry'))
-            
+
             # Handle result using unified handler
             return self._handle_send_result(result, "DM", contact_name, used_retry_method)
                 
@@ -438,45 +596,102 @@ class CommandManager:
     
     async def send_channel_message(self, channel: str, content: str) -> bool:
         """Send a channel message using meshcore-cli command.
-        
-        Resolves channel names to numbers and handles rate limiting.
-        
+
+        Resolves channel names to numbers, handles rate limiting, and splits
+        long messages into multiple parts.
+
         Args:
             channel: The channel name (e.g., "LongFast").
             content: The message content to send.
-            
+
         Returns:
-            bool: True if sent successfully, False otherwise.
+            bool: True if all parts sent successfully, False otherwise.
         """
         if not self.bot.connected or not self.bot.meshcore:
             return False
-        
+
+        # Calculate max bytes for channel messages (accounting for username prefix)
+        # Channel messages are formatted as "<username>: <message>"
+        max_bytes = MAX_MESSAGE_BYTES
+        username = None
+        if hasattr(self.bot, 'meshcore') and self.bot.meshcore:
+            try:
+                if hasattr(self.bot.meshcore, 'self_info') and self.bot.meshcore.self_info:
+                    self_info = self.bot.meshcore.self_info
+                    if isinstance(self_info, dict):
+                        username = self_info.get('name') or self_info.get('user_name')
+                    elif hasattr(self_info, 'name'):
+                        username = self_info.name
+                    elif hasattr(self_info, 'user_name'):
+                        username = self_info.user_name
+            except Exception:
+                pass
+
+        if username:
+            # Account for "<username>: " prefix (username bytes + 2 for ": ")
+            username_bytes = len(username.encode('utf-8'))
+            max_bytes = MAX_MESSAGE_BYTES - username_bytes - 2
+        else:
+            # Fallback: assume ~15 byte username + ": "
+            max_bytes = MAX_MESSAGE_BYTES - 17
+
+        # Split message if needed
+        parts = self.split_message(content, max_bytes)
+
+        if len(parts) > 1:
+            self.logger.info(f"Splitting channel message into {len(parts)} parts (content size: {len(content.encode('utf-8'))} bytes)")
+
+        # Send each part
+        all_success = True
+        for i, part in enumerate(parts):
+            success = await self._send_channel_message_single(channel, part)
+            if not success:
+                all_success = False
+                self.logger.error(f"Failed to send channel message part {i+1}/{len(parts)}")
+                break  # Stop sending remaining parts if one fails
+
+            # Add delay between multi-part messages
+            if i < len(parts) - 1:
+                await asyncio.sleep(2.0)
+
+        return all_success
+
+    async def _send_channel_message_single(self, channel: str, content: str) -> bool:
+        """Send a single channel message (internal helper).
+
+        Args:
+            channel: The channel name.
+            content: The message content to send (must be within size limit).
+
+        Returns:
+            bool: True if sent successfully, False otherwise.
+        """
         # Check all rate limits
         can_send, reason = await self._check_rate_limits()
         if not can_send:
             if reason:
                 self.logger.warning(reason)
             return False
-        
+
         try:
             # Get channel number from channel name
             channel_num = self.bot.channel_manager.get_channel_number(channel)
-            
+
             # Check if channel was found (None indicates channel name not found)
             if channel_num is None:
                 self.logger.error(f"Channel '{channel}' not found. Cannot send message.")
                 return False
-            
+
             self.logger.info(f"Sending channel message to {channel} (channel {channel_num}): {content}")
-            
+
             # Use meshcore-cli send_chan_msg function
             from meshcore_cli.meshcore_cli import send_chan_msg
             result = await send_chan_msg(self.bot.meshcore, channel_num, content)
-            
+
             # Handle result using unified handler
             target = f"{channel} (channel {channel_num})"
             return self._handle_send_result(result, "Channel message", target)
-                
+
         except Exception as e:
             self.logger.error(f"Failed to send channel message: {e}")
             return False
