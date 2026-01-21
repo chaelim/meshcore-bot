@@ -520,7 +520,7 @@ class CommandManager:
 
             # Add delay between multi-part messages to avoid overwhelming the recipient
             if i < len(parts) - 1:
-                await asyncio.sleep(2.0)
+                await asyncio.sleep(3.0)
 
         return all_success
 
@@ -635,8 +635,12 @@ class CommandManager:
             # Fallback: assume ~15 byte username + ": "
             max_bytes = MAX_MESSAGE_BYTES - 17
 
-        # Split message if needed
+        # Split message if needed, limit to max 3 parts for channel messages
         parts = self.split_message(content, max_bytes)
+        max_parts = 3
+        if len(parts) > max_parts:
+            self.logger.warning(f"Channel message would split into {len(parts)} parts, limiting to {max_parts}")
+            parts = parts[:max_parts]
 
         if len(parts) > 1:
             self.logger.info(f"Splitting channel message into {len(parts)} parts (content size: {len(content.encode('utf-8'))} bytes)")
