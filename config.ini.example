@@ -731,7 +731,23 @@ alert_enabled = false
 # agency.city1_alias = 
 
 # Example: Combined region (all counties/agencies)
-# agency.region_all = 
+# agency.region_all =
+
+[Earthquake_Command]
+# Enable or disable the earthquake command
+# true: Earthquake command is available
+# false: Earthquake command is disabled (default)
+enabled = false
+
+# Minimum magnitude to display
+# Only show earthquakes with magnitude >= this value
+# Default: 2.5
+min_magnitude = 2.5
+
+# Search radius in kilometers for location-based queries
+# When searching near a location, only show earthquakes within this radius
+# Default: 500
+search_radius_km = 500
 
 [Announcements_Command]
 # Enable or disable the announcements command

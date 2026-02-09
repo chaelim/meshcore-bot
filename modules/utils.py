@@ -257,7 +257,7 @@ def get_major_city_queries(city: str, state_abbr: Optional[str] = None) -> List[
         '샌프란시스코': ['San Francisco, CA, USA'],
         '콜럼버스': ['Columbus, OH, USA'],
         '포트워스': ['Fort Worth, TX, USA'],
-        '샬럿': ['Charlotte, NC, USA'],
+        '샬롯': ['Charlotte, NC, USA'],
         '시애틀': ['Seattle, WA, USA'],
         '덴버': ['Denver, CO, USA'],
         '워싱턴': ['Washington, DC, USA'],
@@ -267,13 +267,13 @@ def get_major_city_queries(city: str, state_abbr: Optional[str] = None) -> List[
         '내슈빌': ['Nashville, TN, USA'],
         '포틀랜드': ['Portland, OR, USA'],
         '오클라호마시티': ['Oklahoma City, OK, USA'],
-        '라스베이거스': ['Las Vegas, NV, USA'],
+        '라스베가스': ['Las Vegas, NV, USA'],
         '멤피스': ['Memphis, TN, USA'],
         '루이빌': ['Louisville, KY, USA'],
         '볼티모어': ['Baltimore, MD, USA'],
         '밀워키': ['Milwaukee, WI, USA'],
         '앨버커키': ['Albuquerque, NM, USA'],
-        '투손': ['Tucson, AZ, USA'],
+        '투싼': ['Tucson, AZ, USA'],
         '프레즈노': ['Fresno, CA, USA'],
         '새크라멘토': ['Sacramento, CA, USA'],
         '캔자스시티': ['Kansas City, MO, USA'],
@@ -287,7 +287,7 @@ def get_major_city_queries(city: str, state_abbr: Optional[str] = None) -> List[
         '오클랜드': ['Oakland, CA, USA'],
         '미니애폴리스': ['Minneapolis, MN, USA'],
         '털사': ['Tulsa, OK, USA'],
-        '클리블랜드': ['Cleveland, OH, USA'],
+        '클리브랜드': ['Cleveland, OH, USA'],
         '위치타': ['Wichita, KS, USA'],
         '알링턴': ['Arlington, TX, USA'],
         '뉴올리언스': ['New Orleans, LA, USA'],
@@ -380,9 +380,6 @@ def get_major_city_queries(city: str, state_abbr: Optional[str] = None) -> List[
         '과천': ['Gwacheon, KR'],
         'uiwang': ['Uiwang, KR'],
         '의왕': ['Uiwang, KR'],
-
-        # US Major cities in Korean
-        '시애틀': ['Seattle, WA, USA'],
     }
     
     # Check if this is a major city

@@ -28,7 +28,8 @@
     "webviewer": ["webviewer", "web", "viewer", "wv"],
     "cmd": ["cmd", "commands"],
     "advert": ["advert"],
-    "multitest": ["multitest", "mt"]
+    "multitest": ["multitest", "mt"],
+    "earthquake": ["earthquake", "eq", "quake", "seismic"]
   },
   "commands": {
     "help": {
@@ -300,6 +301,25 @@
         "black_hole": "Black holes have no atmosphere, but the tidal forces would be a bigger problem than air quality. 🕳️",
         "asteroid": "Asteroids have no atmosphere, so AQI is perfect! Just watch out for the vacuum of space. ☄️",
         "comet": "Comets have thin atmospheres of water vapor and dust. AQI: Variable, but you'd freeze in space anyway. ☄️"
+      }
+    },
+    "earthquake": {
+      "description": "Get recent earthquake info (usage: eq, eq 5, eq tokyo, eq 47.6,-122.3)",
+      "help": "Usage: eq [magnitude|location|count] - Get recent earthquakes. Examples: eq, eq 5, eq 6.0, eq tokyo, eq 47.6,-122.3, eq 10 (show 10)",
+      "usage": "Usage: eq [magnitude|location|count] - Example: eq, eq 5, eq tokyo",
+      "no_earthquakes": "No M{magnitude}+ earthquakes {location} in last 24h",
+      "no_location": "Could not find location: {location}",
+      "error_fetching": "Error fetching earthquake data",
+      "error_timeout": "Earthquake data request timed out",
+      "error_processing": "Error processing earthquake request",
+      "header": "Recent quakes (M{magnitude}+):",
+      "more_results": "+{count} more",
+      "magnitude_levels": {
+        "major": "Major",
+        "strong": "Strong",
+        "moderate": "Moderate",
+        "light": "Light",
+        "minor": "Minor"
       }
     },
     "solar": {
