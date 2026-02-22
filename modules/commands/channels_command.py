@@ -24,6 +24,16 @@ class ChannelsCommand(BaseCommand):
     description = "Lists hashtag channels with sub-categories. Use 'channels' for general, 'channels list' for all categories, 'channels <category>' for specific categories, 'channels #channel' for specific channel info."
     category = "basic"
     
+    # Documentation
+    short_description = "Lists hashtag channels with sub-categories"
+    usage = "channels [list|category|#channel]"
+    examples = ["channels", "channels list"]
+    parameters = [
+        {"name": "list", "description": "Show all channel categories"},
+        {"name": "category", "description": "Filter by category name"},
+        {"name": "#channel", "description": "Get info on a specific channel"}
+    ]
+    
     def __init__(self, bot):
         """Initialize the channels command.
         
@@ -436,7 +446,8 @@ class ChannelsCommand(BaseCommand):
             if i > 0:
                 # Small delay between messages to prevent overwhelming the network
                 await asyncio.sleep(0.5)
-            await self.send_response(message, msg_content)
+            # Per-user rate limit applies only to first message (trigger); skip for continuations
+            await self.send_response(message, msg_content, skip_user_rate_limit=(i > 0))
     
     def _parse_config_channels(self):
         """Parse all channels from config, returning a generator of (name, description) tuples.

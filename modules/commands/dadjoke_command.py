@@ -24,6 +24,11 @@ class DadJokeCommand(BaseCommand):
     cooldown_seconds = 3
     requires_internet = True  # Requires internet access for API calls
     
+    # Documentation
+    short_description = "Get a random dad joke"
+    usage = "dadjoke"
+    examples = ["dadjoke"]
+    
     # API configuration
     DAD_JOKE_API_URL = "https://icanhazdadjoke.com/"
     TIMEOUT = 10  # seconds
@@ -36,9 +41,11 @@ class DadJokeCommand(BaseCommand):
         """
         super().__init__(bot)
         
-        # Load configuration
-        self.dadjoke_enabled = bot.config.getboolean('Jokes', 'dadjoke_enabled', fallback=True)
-        self.long_jokes = bot.config.getboolean('Jokes', 'long_jokes', fallback=False)
+        # Load configuration (enabled standard; dadjoke_enabled legacy from [DadJoke_Command] or [Jokes])
+        self.dadjoke_enabled = self.get_config_value('DadJoke_Command', 'enabled', fallback=None, value_type='bool')
+        if self.dadjoke_enabled is None:
+            self.dadjoke_enabled = self.get_config_value('DadJoke_Command', 'dadjoke_enabled', fallback=True, value_type='bool')
+        self.long_jokes = self.get_config_value('DadJoke_Command', 'long_jokes', fallback=False, value_type='bool')
     
     def get_help_text(self) -> str:
         """Get help text for the dadjoke command.
@@ -211,11 +218,10 @@ class DadJokeCommand(BaseCommand):
             parts = self.split_dad_joke(joke_text)
             
             if len(parts) == 2 and len(parts[0]) <= 130 and len(parts[1]) <= 130:
-                # Can be split into two messages
+                # Can be split into two messages (per-user rate limit applies only to first)
                 await self.send_response(message, parts[0])
                 # Use conservative delay to avoid rate limiting (same as weather command)
-                await asyncio.sleep(2.0)
-                await self.send_response(message, parts[1])
+                await self.send_response(message, parts[1], skip_user_rate_limit=True)
             else:
                 # Cannot be split properly, send as single message (user will see truncation)
                 await self.send_response(message, joke_text)
